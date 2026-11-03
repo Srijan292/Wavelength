@@ -1,0 +1,201 @@
+.player-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 30;
+  height: var(--player-h);
+  padding: 0 24px;
+  background: var(--raised);
+  border-top: 1px solid var(--border);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 480px) minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  grid-template-areas:
+    "meta controls extras"
+    "meta progress extras";
+  align-content: center;
+  align-items: center;
+  column-gap: 24px;
+  row-gap: 4px;
+}
+
+.player-bar__meta {
+  grid-area: meta;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.player-bar__thumb {
+  width: 44px;
+  height: 44px;
+  border-radius: 6px;
+  background: var(--border);
+  color: var(--text);
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.player-bar__text {
+  min-width: 0;
+}
+
+.player-bar__title {
+  font-size: 14px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.player-bar__artist {
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.player-bar__controls {
+  grid-area: controls;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.player-bar__progress {
+  grid-area: progress;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.player-bar__time {
+  width: 36px;
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.player-bar__time--end {
+  text-align: right;
+}
+
+.player-bar__extras {
+  grid-area: extras;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  color: var(--muted);
+}
+
+.player-bar__volume {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.player-bar__error {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + 1px);
+  padding: 8px 24px;
+  background: var(--raised);
+  border-top: 1px solid var(--border);
+  color: var(--danger);
+  font-size: 13px;
+  text-align: center;
+}
+
+/* ── Range sliders ─────────────────────────────────────── */
+
+.range {
+  -webkit-appearance: none;
+  appearance: none;
+  flex: 1;
+  min-width: 0;
+  height: 4px;
+  margin: 0;
+  border-radius: 2px;
+  background: linear-gradient(
+    to right,
+    var(--accent) var(--fill, 0%),
+    var(--border-strong) var(--fill, 0%)
+  );
+}
+
+.range::-webkit-slider-runnable-track {
+  background: transparent;
+  height: 4px;
+}
+
+.range::-moz-range-track {
+  background: transparent;
+  height: 4px;
+}
+
+.range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  margin-top: -4px;
+  border: none;
+  border-radius: 50%;
+  background: var(--text);
+  cursor: pointer;
+}
+
+.range::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border: none;
+  border-radius: 50%;
+  background: var(--text);
+  cursor: pointer;
+}
+
+.range:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.range:disabled::-webkit-slider-thumb {
+  cursor: not-allowed;
+}
+
+.range--volume {
+  flex: none;
+  width: 96px;
+}
+
+/* ── Small screens: title and controls share a row, the seek bar spans below ── */
+
+@media (max-width: 640px) {
+  .player-bar {
+    padding: 0 16px;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    grid-template-areas:
+      "meta controls extras"
+      "progress progress progress";
+    column-gap: 8px;
+    row-gap: 6px;
+  }
+
+  .player-bar__volume {
+    display: none;
+  }
+
+  .player-bar__error {
+    padding: 8px 16px;
+  }
+}
