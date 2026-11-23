@@ -1,50 +1,59 @@
-import { useEffect, useRef } from "react";
 import { usePlayer } from "../../context/PlayerContext";
 import { formatDuration } from "../../lib/format";
-import { CloseIcon, PauseIcon, PlayIcon } from "../icons";
+import { PauseIcon, PlayIcon, RepeatIcon, RepeatOneIcon, ShuffleIcon } from "../icons";
+import { Drawer } from "./Drawer";
 
 interface QueuePanelProps {
   open: boolean;
   onClose: () => void;
 }
 
-export function QueuePanel({ open, onClose }: QueuePanelProps) {
-  const { queue, currentIndex, isPlaying, jumpTo, togglePlayPause } =
-    usePlayer();
-  const closeRef = useRef<HTMLButtonElement>(null);
+const REPEAT_LABEL = { off: "Repeat: off", all: "Repeat: all", one: "Repeat: one" } as const;
 
-  useEffect(() => {
-    if (!open) return;
-    closeRef.current?.focus();
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [open, onClose]);
+export function QueuePanel({ open, onClose }: QueuePanelProps) {
+  const {
+    queue,
+    currentIndex,
+    isPlaying,
+    shuffle,
+    repeat,
+    jumpTo,
+    togglePlayPause,
+    toggleShuffle,
+    cycleRepeat,
+  } = usePlayer();
+
+  const modeButtons = (
+    <>
+      <button
+        type="button"
+        className={shuffle ? "btn-icon btn-icon--toggled" : "btn-icon"}
+        onClick={toggleShuffle}
+        aria-label="Shuffle"
+        aria-pressed={shuffle}
+      >
+        <ShuffleIcon />
+      </button>
+      <button
+        type="button"
+        className={repeat !== "off" ? "btn-icon btn-icon--toggled" : "btn-icon"}
+        onClick={cycleRepeat}
+        aria-label={REPEAT_LABEL[repeat]}
+        aria-pressed={repeat !== "off"}
+      >
+        {repeat === "one" ? <RepeatOneIcon /> : <RepeatIcon />}
+      </button>
+    </>
+  );
 
   return (
-    <aside
-      className={open ? "queue queue--open" : "queue"}
-      aria-label="Queue"
-      aria-hidden={!open}
+    <Drawer
+      open={open}
+      title="Queue"
+      subtitle={`${queue.length} ${queue.length === 1 ? "song" : "songs"}`}
+      actions={modeButtons}
+      onClose={onClose}
     >
-      <header className="queue__header">
-        <h2>Queue</h2>
-        <span className="queue__count">
-          {queue.length} {queue.length === 1 ? "song" : "songs"}
-        </span>
-        <button
-          ref={closeRef}
-          type="button"
-          className="btn-icon"
-          onClick={onClose}
-          aria-label="Close queue"
-        >
-          <CloseIcon />
-        </button>
-      </header>
-
       {queue.length === 0 ? (
         <p className="queue__empty">
           The queue is empty. Play a song from your library, or use Queue on a
@@ -90,6 +99,6 @@ export function QueuePanel({ open, onClose }: QueuePanelProps) {
           })}
         </ol>
       )}
-    </aside>
+    </Drawer>
   );
 }

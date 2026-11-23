@@ -1,44 +1,21 @@
-import { useRef, useState } from "react";
-import { guessContentType } from "../../lib/audioMeta";
+import { useRef } from "react";
 
 interface UploadButtonProps {
-  onUpload: (file: File) => Promise<unknown>;
+  busy: boolean;
+  progress: { done: number; total: number } | null;
+  errors: string[];
+  hiddenErrors: number;
+  onFiles: (files: FileList) => void;
 }
 
-const MAX_ERRORS_SHOWN = 3;
-
-export function UploadButton({ onUpload }: UploadButtonProps) {
+export function UploadButton({
+  busy,
+  progress,
+  errors,
+  hiddenErrors,
+  onFiles,
+}: UploadButtonProps) {
   const inputRef = useRef<HTMLInputElement>(null);
-  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
-  const [errors, setErrors] = useState<string[]>([]);
-
-  async function handleFiles(fileList: FileList | null) {
-    if (!fileList || fileList.length === 0) return;
-    const files = Array.from(fileList);
-    const failures: string[] = [];
-    setErrors([]);
-    setProgress({ done: 0, total: files.length });
-
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
-      try {
-        if (!guessContentType(file).startsWith("audio/")) {
-          throw new Error("this isn't an audio file.");
-        }
-        await onUpload(file);
-      } catch (err) {
-        const reason = err instanceof Error ? err.message : "something went wrong.";
-        failures.push(`Couldn't upload ${file.name}: ${reason}`);
-      }
-      setProgress({ done: i + 1, total: files.length });
-    }
-
-    setProgress(null);
-    setErrors(failures);
-  }
-
-  const busy = progress !== null;
-  const hidden = Math.max(0, errors.length - MAX_ERRORS_SHOWN);
 
   return (
     <div className="upload-control">
@@ -49,7 +26,7 @@ export function UploadButton({ onUpload }: UploadButtonProps) {
         multiple
         hidden
         onChange={(e) => {
-          void handleFiles(e.target.files);
+          if (e.target.files) onFiles(e.target.files);
           e.target.value = ""; // lets the same file be chosen again later
         }}
       />
@@ -65,13 +42,13 @@ export function UploadButton({ onUpload }: UploadButtonProps) {
       </button>
       {errors.length > 0 && (
         <div className="upload-control__errors" role="alert">
-          {errors.slice(0, MAX_ERRORS_SHOWN).map((message) => (
+          {errors.map((message) => (
             <p key={message} className="form-error">
               {message}
             </p>
           ))}
-          {hidden > 0 && (
-            <p className="form-error">and {hidden} more failed.</p>
+          {hiddenErrors > 0 && (
+            <p className="form-error">and {hiddenErrors} more failed.</p>
           )}
         </div>
       )}

@@ -1,4 +1,5 @@
-:root {
+:root,
+:root[data-theme="dark"] {
   color-scheme: dark;
 
   --bg: #14161c;
@@ -8,11 +9,74 @@
   --border-strong: #3a3f4d;
   --text: #edeef2;
   --muted: #8b909e;
+  --danger: #e0645a;
+  --scrim: rgba(0, 0, 0, 0.55);
+
+  /* accent: amber (default). --accent fills, --accent-text is for text on the page. */
   --accent: #d9a441;
   --accent-strong: #f0c168;
+  --accent-text: #f0c168;
   --on-accent: #201404;
-  --danger: #e0645a;
 
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  --bg: #f3f4f7;
+  --surface: #ffffff;
+  --raised: #ffffff;
+  --border: #e1e4ea;
+  --border-strong: #c5cad5;
+  --text: #14161c;
+  --muted: #5a6070;
+  --danger: #c23a30;
+  --scrim: rgba(20, 22, 28, 0.4);
+
+  --accent: #d9a441;
+  --accent-strong: #c4912f;
+  --accent-text: #8a5a00;
+  --on-accent: #201404;
+}
+
+:root[data-accent="teal"] {
+  --accent: #3fb8a6;
+  --accent-strong: #5ccdbc;
+  --accent-text: #6fd9c9;
+  --on-accent: #04201c;
+}
+:root[data-theme="light"][data-accent="teal"] {
+  --accent: #1f9d8b;
+  --accent-strong: #17887a;
+  --accent-text: #0b6b5e;
+}
+
+:root[data-accent="rose"] {
+  --accent: #e0698a;
+  --accent-strong: #ea86a2;
+  --accent-text: #f08fab;
+  --on-accent: #2a0612;
+}
+:root[data-theme="light"][data-accent="rose"] {
+  --accent: #d4577b;
+  --accent-strong: #c0466a;
+  --accent-text: #a3234a;
+}
+
+:root[data-accent="violet"] {
+  --accent: #9b87f5;
+  --accent-strong: #b3a3ff;
+  --accent-text: #bcaeff;
+  --on-accent: #120a33;
+}
+:root[data-theme="light"][data-accent="violet"] {
+  --accent: #8670ee;
+  --accent-strong: #7459e0;
+  --accent-text: #5a3fc7;
+}
+
+/* Theme-independent tokens. Kept in a plain :root so the mobile override below wins. */
+:root {
   --radius: 8px;
   --font: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
   --player-h: 92px;
@@ -144,7 +208,7 @@ button:disabled {
 }
 
 .btn-icon--toggled {
-  color: var(--accent);
+  color: var(--accent-text);
   background: var(--border);
 }
 
@@ -206,4 +270,67 @@ button:disabled {
   to {
     transform: rotate(360deg);
   }
+}
+
+/* ── Segmented control and swatches (settings) ─────────── */
+
+.segmented {
+  display: flex;
+  padding: 3px;
+  gap: 2px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+}
+
+.segmented__item {
+  flex: 1;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.segmented__item:hover {
+  color: var(--text);
+}
+
+.segmented__item--on {
+  background: var(--border);
+  color: var(--text);
+  font-weight: 500;
+}
+
+.swatches {
+  display: flex;
+  gap: 12px;
+}
+
+.swatch {
+  width: 28px;
+  height: 28px;
+  border: 2px solid transparent;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 2px var(--surface);
+  padding: 0;
+}
+
+.swatch--on {
+  border-color: var(--text);
+}
+
+.btn-danger {
+  background: var(--danger);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius);
+  padding: 8px 16px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.btn-danger:hover {
+  filter: brightness(1.1);
 }

@@ -9,6 +9,24 @@ import {
   type ReactNode,
 } from "react";
 import { backend, type Song } from "../lib/backend";
+import { readStored, writeStored } from "../lib/storage";
+import {
+  EQ_BAND_COUNT,
+  FLAT_GAINS,
+  clampGain,
+  createEqualizer,
+  isGainList,
+  type Equalizer,
+} from "../lib/audio/equalizer";
+
+export type RepeatMode = "off" | "all" | "one";
+
+const isBool = (v: unknown): v is boolean => typeof v === "boolean";
+const isRepeatMode = (v: unknown): v is RepeatMode =>
+  v === "off" || v === "all" || v === "one";
+const isVolume = (v: unknown): v is number =>
+  typeof v === "number" && v >= 0 && v <= 1;
+const HISTORY_LIMIT = 200;
 
 interface PlayerContextValue {
   queue: Song[];
@@ -17,6 +35,11 @@ interface PlayerContextValue {
   isPlaying: boolean;
   isBuffering: boolean;
   volume: number;
+  muted: boolean;
+  shuffle: boolean;
+  repeat: RepeatMode;
+  eqEnabled: boolean;
+  eqGains: number[];
   error: string | null;
   /** Replace the queue with `songs` and start playing at `startIndex`. */
   playQueue: (songs: Song[], startIndex: number) => void;
@@ -28,6 +51,12 @@ interface PlayerContextValue {
   playPrev: () => void;
   seekTo: (time: number) => void;
   changeVolume: (value: number) => void;
+  toggleMute: () => void;
+  toggleShuffle: () => void;
+  cycleRepeat: () => void;
+  setEqEnabled: (enabled: boolean) => void;
+  setEqBand: (index: number, gain: number) => void;
+  setEqGains: (gains: number[]) => void;
   /** Call after a song is deleted: drops it from the queue and stops it if it was playing. */
   forgetSong: (id: string) => void;
   /** Call after a song is edited so the queue shows the new title/artist. */
@@ -57,6 +86,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     // Required: without CORS mode, routing a cross-origin file (like a Supabase
     // signed URL) through the Web Audio API outputs silence.
     audio.crossOrigin = "anonymous";
+    audio.volume = readStored("volume", 1, isVolume);
     return audio;
   });
 
@@ -65,6 +95,11 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   // Bumped on every load request and on stop, so a slow response for an
   // earlier track can never overwrite a newer one.
   const loadTokenRef = useRef(0);
+  const equalizerRef = useRef<Equalizer | null>(null);
+  // Shuffle bookkeeping, by song id: what has played this cycle, and the
+  // order songs were visited so "previous" can walk back through a shuffle.
+  const playedRef = useRef<Set<string>>(new Set());
+  const historyRef = useRef<string[]>([]);
 
   const [queue, setQueue] = useState<Song[]>([]);
   const [currentIndex, setCurrentIndex] = useState(-1);
@@ -72,17 +107,30 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const [isBuffering, setIsBuffering] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
-  const [volume, setVolumeState] = useState(1);
+  const [volume, setVolumeState] = useState(() => audioElement.volume);
+  const [muted, setMuted] = useState(false);
+  const [shuffle, setShuffle] = useState(() => readStored("shuffle", false, isBool));
+  const [repeat, setRepeat] = useState<RepeatMode>(() =>
+    readStored<RepeatMode>("repeat", "off", isRepeatMode)
+  );
+  const [eqEnabled, setEqEnabledState] = useState(() =>
+    readStored("eqEnabled", false, isBool)
+  );
+  const [eqGains, setEqGainsState] = useState<number[]>(() =>
+    readStored<number[]>("eqGains", FLAT_GAINS, isGainList)
+  );
+  const eqStateRef = useRef({ gains: eqGains, enabled: eqEnabled });
   const [error, setError] = useState<string | null>(null);
 
   const currentSong = currentIndex >= 0 ? (queue[currentIndex] ?? null) : null;
 
   // Builds the Web Audio graph once, on first playback (which always follows a
   // user gesture, so the context isn't left suspended by autoplay rules):
-  //   <audio> -> source -> analyser -> gain -> speakers
-  // Phase 3's equalizer inserts a chain of BiquadFilterNodes between the
-  // analyser and the gain. Volume uses audio.volume, not the gain node, so the
-  // two never double-attenuate.
+  //   <audio> -> source -> equalizer (10 filters + headroom) -> analyser
+  //           -> gain -> speakers
+  // The analyser sits after the equalizer so the spectrum shows what you hear.
+  // Volume uses audio.volume, not the gain node, so the two never
+  // double-attenuate.
   const ensureAudioGraph = useCallback((): AudioContext => {
     if (audioContextRef.current) return audioContextRef.current;
 
@@ -100,13 +148,20 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     analyser.smoothingTimeConstant = 0.82;
     const gain = context.createGain();
     gain.gain.value = 1;
+    const equalizer = createEqualizer(
+      context,
+      eqStateRef.current.gains,
+      eqStateRef.current.enabled
+    );
 
-    source.connect(analyser);
+    source.connect(equalizer.input);
+    equalizer.output.connect(analyser);
     analyser.connect(gain);
     gain.connect(context.destination);
 
     audioContextRef.current = context;
     analyserRef.current = analyser;
+    equalizerRef.current = equalizer;
     return context;
   }, [audioElement]);
 
@@ -155,25 +210,37 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     [ensureAudioGraph, audioElement]
   );
 
+  /** Move to `index` of `list`, recording where we came from. */
+  const goTo = useCallback(
+    (index: number, list: Song[], recordHistory: boolean) => {
+      const target = list[index];
+      if (!target) return;
+      if (recordHistory && currentSong && currentSong.id !== target.id) {
+        historyRef.current.push(currentSong.id);
+        if (historyRef.current.length > HISTORY_LIMIT) historyRef.current.shift();
+      }
+      playedRef.current.add(target.id);
+      setCurrentIndex(index);
+      void loadSongAndPlay(target);
+    },
+    [currentSong, loadSongAndPlay]
+  );
+
   const playQueue = useCallback(
     (songsToPlay: Song[], startIndex: number) => {
       const target = songsToPlay[startIndex];
       if (!target) return;
+      playedRef.current = new Set();
+      historyRef.current = [];
       setQueue(songsToPlay);
-      setCurrentIndex(startIndex);
-      void loadSongAndPlay(target);
+      goTo(startIndex, songsToPlay, false);
     },
-    [loadSongAndPlay]
+    [goTo]
   );
 
   const jumpTo = useCallback(
-    (index: number) => {
-      const target = queue[index];
-      if (!target) return;
-      setCurrentIndex(index);
-      void loadSongAndPlay(target);
-    },
-    [queue, loadSongAndPlay]
+    (index: number) => goTo(index, queue, true),
+    [goTo, queue]
   );
 
   const addToQueue = useCallback((song: Song) => {
@@ -205,15 +272,50 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     }
   }, [currentSong, isPlaying, audioElement, ensureAudioGraph, loadSongAndPlay]);
 
-  const playNext = useCallback(() => {
-    const nextIndex = currentIndex + 1;
-    if (nextIndex >= queue.length) {
-      audioElement.pause();
-      return;
-    }
-    setCurrentIndex(nextIndex);
-    void loadSongAndPlay(queue[nextIndex]);
-  }, [queue, currentIndex, audioElement, loadSongAndPlay]);
+  // `auto` is true when a track ended by itself. Only then does "repeat one"
+  // replay the same song; pressing Next always moves on.
+  const advance = useCallback(
+    (auto: boolean) => {
+      if (!currentSong) return;
+
+      if (auto && repeat === "one") {
+        audioElement.currentTime = 0;
+        void audioElement.play().catch(() => undefined);
+        return;
+      }
+
+      let next = -1;
+      if (shuffle) {
+        const pickUnplayed = () =>
+          queue
+            .map((song, i) => (playedRef.current.has(song.id) ? -1 : i))
+            .filter((i) => i >= 0);
+        let candidates = pickUnplayed();
+        if (candidates.length === 0 && repeat === "all") {
+          // Everything has played: start a fresh cycle, avoiding an immediate
+          // repeat of the current song when there is anything else.
+          playedRef.current = new Set([currentSong.id]);
+          candidates = pickUnplayed();
+          if (candidates.length === 0 && queue.length > 0) candidates = [currentIndex];
+        }
+        if (candidates.length > 0) {
+          next = candidates[Math.floor(Math.random() * candidates.length)];
+        }
+      } else {
+        next = currentIndex + 1;
+        if (next >= queue.length) next = repeat === "all" ? 0 : -1;
+      }
+
+      if (next < 0) {
+        if (!auto) audioElement.pause();
+        return;
+      }
+      goTo(next, queue, true);
+    },
+    [currentSong, currentIndex, queue, shuffle, repeat, audioElement, goTo]
+  );
+
+  const playNext = useCallback(() => advance(false), [advance]);
 
   const playPrev = useCallback(() => {
     // Standard player behavior: past the first few seconds, restart the track.
@@ -222,11 +324,24 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       setCurrentTime(0);
       return;
     }
+    if (shuffle) {
+      // Walk back through what actually played, skipping removed songs.
+      while (historyRef.current.length > 0) {
+        const id = historyRef.current.pop()!;
+        const index = queue.findIndex((s) => s.id === id);
+        if (index >= 0) {
+          goTo(index, queue, false);
+          return;
+        }
+      }
+      audioElement.currentTime = 0;
+      setCurrentTime(0);
+      return;
+    }
     const prevIndex = currentIndex - 1;
     if (prevIndex < 0) return;
-    setCurrentIndex(prevIndex);
-    void loadSongAndPlay(queue[prevIndex]);
-  }, [queue, currentIndex, audioElement, loadSongAndPlay]);
+    goTo(prevIndex, queue, false);
+  }, [queue, currentIndex, shuffle, audioElement, goTo]);
 
   const seekTo = useCallback(
     (time: number) => {
@@ -241,14 +356,67 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       const clamped = Math.min(1, Math.max(0, value));
       setVolumeState(clamped);
       audioElement.volume = clamped;
+      writeStored("volume", clamped);
+      // Raising the volume is an obvious request to hear something.
+      if (clamped > 0) {
+        setMuted(false);
+        audioElement.muted = false;
+      }
     },
     [audioElement]
   );
+
+  const toggleMute = useCallback(() => {
+    if (muted) {
+      // Unmuting while the slider sits at zero would still be silent.
+      if (volume === 0) {
+        setVolumeState(0.5);
+        audioElement.volume = 0.5;
+        writeStored("volume", 0.5);
+      }
+      setMuted(false);
+      audioElement.muted = false;
+    } else {
+      setMuted(true);
+      audioElement.muted = true;
+    }
+  }, [muted, volume, audioElement]);
+
+  const toggleShuffle = useCallback(() => {
+    // Start a clean cycle: the current song counts as already played.
+    playedRef.current = new Set(currentSong ? [currentSong.id] : []);
+    historyRef.current = [];
+    setShuffle(!shuffle);
+  }, [shuffle, currentSong]);
+
+  const cycleRepeat = useCallback(() => {
+    setRepeat((mode) => (mode === "off" ? "all" : mode === "all" ? "one" : "off"));
+  }, []);
+
+  const setEqEnabled = useCallback((enabled: boolean) => {
+    setEqEnabledState(enabled);
+  }, []);
+
+  const setEqBand = useCallback((index: number, gain: number) => {
+    if (index < 0 || index >= EQ_BAND_COUNT) return;
+    setEqGainsState((prev) => {
+      const next = [...prev];
+      next[index] = clampGain(gain);
+      return next;
+    });
+  }, []);
+
+  const setEqGains = useCallback((gains: number[]) => {
+    if (gains.length !== EQ_BAND_COUNT) return;
+    setEqGainsState(gains.map(clampGain));
+  }, []);
 
   const forgetSong = useCallback(
     (id: string) => {
       const keptQueue = queue.filter((s) => s.id !== id);
       if (keptQueue.length === queue.length) return;
+      playedRef.current.delete(id);
+      historyRef.current = historyRef.current.filter((h) => h !== id);
 
       if (currentSong?.id === id) {
         stopPlayback();
@@ -273,11 +441,21 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const getAnalyser = useCallback(() => analyserRef.current, []);
 
   // Native <audio> events are registered once; 'ended' reads the latest
-  // playNext through a ref so it never acts on a stale queue.
-  const playNextRef = useRef(playNext);
+  // advance through a ref so it never acts on a stale queue.
+  const advanceRef = useRef(advance);
   useEffect(() => {
-    playNextRef.current = playNext;
-  }, [playNext]);
+    advanceRef.current = advance;
+  }, [advance]);
+
+  // Apply and persist equalizer, shuffle and repeat changes.
+  useEffect(() => {
+    eqStateRef.current = { gains: eqGains, enabled: eqEnabled };
+    equalizerRef.current?.apply(eqGains, eqEnabled);
+    writeStored("eqEnabled", eqEnabled);
+    writeStored("eqGains", eqGains);
+  }, [eqGains, eqEnabled]);
+  useEffect(() => writeStored("shuffle", shuffle), [shuffle]);
+  useEffect(() => writeStored("repeat", repeat), [repeat]);
 
   useEffect(() => {
     const handleTimeUpdate = () => setCurrentTime(audioElement.currentTime);
@@ -286,7 +464,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         setDuration(audioElement.duration);
       }
     };
-    const handleEnded = () => playNextRef.current();
+    const handleEnded = () => advanceRef.current(true);
     const handleWaiting = () => setIsBuffering(true);
     const handlePlaying = () => setIsBuffering(false);
     const handlePlay = () => setIsPlaying(true);
@@ -327,25 +505,46 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       void audioContextRef.current?.close();
       audioContextRef.current = null;
       analyserRef.current = null;
+      equalizerRef.current = null;
     };
   }, [audioElement]);
 
-  // Space toggles play/pause, unless the person is typing or on a control
-  // that already uses Space.
+  // Keyboard: Space play/pause, arrows seek 5 s, M mutes. Ignored while the
+  // person is typing, on a control that uses these keys itself, or in a dialog.
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.code !== "Space" || e.repeat) return;
+      if (e.repeat && e.code === "Space") return;
       if (e.ctrlKey || e.metaKey || e.altKey) return;
+      if (!["Space", "ArrowLeft", "ArrowRight", "KeyM"].includes(e.code)) return;
       const target = e.target as HTMLElement | null;
-      if (target?.closest('input, textarea, select, button, a, [contenteditable="true"]')) {
+      if (
+        target?.closest(
+          'input, textarea, select, button, a, [role="slider"], [contenteditable="true"]'
+        )
+      ) {
         return;
       }
-      e.preventDefault();
-      void togglePlayPause();
+      if (document.querySelector("dialog[open]")) return;
+
+      if (e.code === "Space") {
+        e.preventDefault();
+        void togglePlayPause();
+      } else if (e.code === "KeyM") {
+        toggleMute();
+      } else if (currentSong && audioElement.getAttribute("src")) {
+        e.preventDefault();
+        const delta = e.code === "ArrowRight" ? 5 : -5;
+        const limit = Number.isFinite(audioElement.duration)
+          ? audioElement.duration
+          : Infinity;
+        const time = Math.min(limit, Math.max(0, audioElement.currentTime + delta));
+        audioElement.currentTime = time;
+        setCurrentTime(time);
+      }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [togglePlayPause]);
+  }, [togglePlayPause, toggleMute, currentSong, audioElement]);
 
   // Lock-screen / hardware media key integration.
   useEffect(() => {
@@ -384,6 +583,11 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       isPlaying,
       isBuffering,
       volume,
+      muted,
+      shuffle,
+      repeat,
+      eqEnabled,
+      eqGains,
       error,
       playQueue,
       jumpTo,
@@ -393,6 +597,12 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       playPrev,
       seekTo,
       changeVolume,
+      toggleMute,
+      toggleShuffle,
+      cycleRepeat,
+      setEqEnabled,
+      setEqBand,
+      setEqGains,
       forgetSong,
       syncSong,
       getAnalyser,
@@ -404,6 +614,11 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       isPlaying,
       isBuffering,
       volume,
+      muted,
+      shuffle,
+      repeat,
+      eqEnabled,
+      eqGains,
       error,
       playQueue,
       jumpTo,
@@ -413,6 +628,12 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       playPrev,
       seekTo,
       changeVolume,
+      toggleMute,
+      toggleShuffle,
+      cycleRepeat,
+      setEqEnabled,
+      setEqBand,
+      setEqGains,
       forgetSong,
       syncSong,
       getAnalyser,

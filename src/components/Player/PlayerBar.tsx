@@ -2,18 +2,25 @@ import type { CSSProperties } from "react";
 import { usePlayer, usePlayerTime } from "../../context/PlayerContext";
 import { formatDuration } from "../../lib/format";
 import {
+  EqIcon,
+  MutedIcon,
   NextIcon,
   PauseIcon,
   PlayIcon,
   PrevIcon,
   QueueIcon,
+  RepeatIcon,
+  RepeatOneIcon,
+  ShuffleIcon,
   SpinnerIcon,
   VolumeIcon,
 } from "../icons";
 
+export type PanelName = "queue" | "eq";
+
 interface PlayerBarProps {
-  queueOpen: boolean;
-  onToggleQueue: () => void;
+  panel: PanelName | null;
+  onTogglePanel: (panel: PanelName) => void;
 }
 
 function fillStyle(value: number, max: number): CSSProperties {
@@ -51,18 +58,27 @@ function SeekBar() {
   );
 }
 
-export function PlayerBar({ queueOpen, onToggleQueue }: PlayerBarProps) {
+export function PlayerBar({ panel, onTogglePanel }: PlayerBarProps) {
   const {
     currentSong,
     isPlaying,
     isBuffering,
     volume,
+    muted,
+    shuffle,
+    repeat,
+    eqEnabled,
     error,
     togglePlayPause,
     playNext,
     playPrev,
     changeVolume,
+    toggleMute,
+    toggleShuffle,
+    cycleRepeat,
   } = usePlayer();
+
+  const silent = muted || volume === 0;
 
   const hasSong = currentSong !== null;
 
@@ -83,6 +99,19 @@ export function PlayerBar({ queueOpen, onToggleQueue }: PlayerBarProps) {
       </div>
 
       <div className="player-bar__controls">
+        <button
+          type="button"
+          className={
+            shuffle
+              ? "btn-icon btn-icon--small btn-icon--toggled player-bar__mode"
+              : "btn-icon btn-icon--small player-bar__mode"
+          }
+          onClick={toggleShuffle}
+          aria-label="Shuffle"
+          aria-pressed={shuffle}
+        >
+          <ShuffleIcon />
+        </button>
         <button
           type="button"
           className="btn-icon"
@@ -116,31 +145,63 @@ export function PlayerBar({ queueOpen, onToggleQueue }: PlayerBarProps) {
         >
           <NextIcon size={14} />
         </button>
+        <button
+          type="button"
+          className={
+            repeat !== "off"
+              ? "btn-icon btn-icon--small btn-icon--toggled player-bar__mode"
+              : "btn-icon btn-icon--small player-bar__mode"
+          }
+          onClick={cycleRepeat}
+          aria-label={`Repeat: ${repeat}`}
+          aria-pressed={repeat !== "off"}
+        >
+          {repeat === "one" ? <RepeatOneIcon /> : <RepeatIcon />}
+        </button>
       </div>
 
       <SeekBar />
 
       <div className="player-bar__extras">
         <div className="player-bar__volume">
-          <VolumeIcon />
+          <button
+            type="button"
+            className="btn-icon btn-icon--small"
+            onClick={toggleMute}
+            aria-label={muted ? "Unmute" : "Mute"}
+            aria-pressed={muted}
+          >
+            {silent ? <MutedIcon /> : <VolumeIcon />}
+          </button>
           <input
             type="range"
             className="range range--volume"
-            style={fillStyle(volume, 1)}
+            style={fillStyle(muted ? 0 : volume, 1)}
             min={0}
             max={1}
             step={0.01}
-            value={volume}
+            value={muted ? 0 : volume}
             onChange={(e) => changeVolume(Number(e.target.value))}
             aria-label="Volume"
           />
         </div>
         <button
           type="button"
-          className={queueOpen ? "btn-icon btn-icon--toggled" : "btn-icon"}
-          onClick={onToggleQueue}
+          className={
+            panel === "eq" || eqEnabled ? "btn-icon btn-icon--toggled" : "btn-icon"
+          }
+          onClick={() => onTogglePanel("eq")}
+          aria-label="Equalizer"
+          aria-pressed={panel === "eq"}
+        >
+          <EqIcon />
+        </button>
+        <button
+          type="button"
+          className={panel === "queue" ? "btn-icon btn-icon--toggled" : "btn-icon"}
+          onClick={() => onTogglePanel("queue")}
           aria-label="Queue"
-          aria-pressed={queueOpen}
+          aria-pressed={panel === "queue"}
         >
           <QueueIcon />
         </button>

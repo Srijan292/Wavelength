@@ -145,3 +145,69 @@ export function WaveMark({ size = 22 }: IconProps) {
     </svg>
   );
 }
+
+const strokeProps = {
+  stroke: "currentColor",
+  strokeWidth: 1.5,
+  strokeLinecap: "round" as const,
+  strokeLinejoin: "round" as const,
+  fill: "none",
+};
+
+export function ShuffleIcon({ size }: IconProps) {
+  return (
+    <Svg size={size}>
+      <path d="M2 4.5h2.2c3.3 0 4.3 7 7.6 7H14M2 11.5h2.2c1 0 1.8-.5 2.4-1.2M9.4 5.7c.6-.7 1.4-1.2 2.4-1.2H14" {...strokeProps} />
+      <path d="M12 2.5l2 2-2 2M12 9.5l2 2-2 2" {...strokeProps} />
+    </Svg>
+  );
+}
+
+export function RepeatIcon({ size }: IconProps) {
+  return (
+    <Svg size={size}>
+      <path d="M3 7.5V7a2 2 0 0 1 2-2h8M13 8.5V9a2 2 0 0 1-2 2H3" {...strokeProps} />
+      <path d="M11 3l2 2-2 2M5 9l-2 2 2 2" {...strokeProps} />
+    </Svg>
+  );
+}
+
+export function RepeatOneIcon({ size }: IconProps) {
+  return (
+    <Svg size={size}>
+      <path d="M3 7.5V7a2 2 0 0 1 2-2h8M13 8.5V9a2 2 0 0 1-2 2H3" {...strokeProps} />
+      <path d="M11 3l2 2-2 2M5 9l-2 2 2 2" {...strokeProps} />
+      <path d="M7.2 6.9l1.1-.8v3.8" {...strokeProps} strokeWidth={1.2} />
+    </Svg>
+  );
+}
+
+export function MutedIcon({ size }: IconProps) {
+  return (
+    <Svg size={size}>
+      <path d="M2 6h2.5L8 3v10L4.5 10H2V6z" fill="currentColor" />
+      <path d="M10.5 6l3.5 4M14 6l-3.5 4" {...strokeProps} />
+    </Svg>
+  );
+}
+
+export function EqIcon({ size }: IconProps) {
+  return (
+    <Svg size={size}>
+      <path d="M3 2v12M8 2v12M13 2v12" {...strokeProps} />
+      <circle cx="3" cy="10" r="1.9" fill="currentColor" />
+      <circle cx="8" cy="5" r="1.9" fill="currentColor" />
+      <circle cx="13" cy="8.5" r="1.9" fill="currentColor" />
+    </Svg>
+  );
+}
+
+/** Half-filled circle: the usual "appearance" glyph. */
+export function ContrastIcon({ size }: IconProps) {
+  return (
+    <Svg size={size}>
+      <circle cx="8" cy="8" r="6" {...strokeProps} />
+      <path d="M8 2a6 6 0 0 0 0 12z" fill="currentColor" />
+    </Svg>
+  );
+}

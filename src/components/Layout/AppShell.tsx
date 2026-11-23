@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { WaveMark } from "../icons";
+import { SettingsMenu } from "./SettingsMenu";
 
 export function AppShell({ children }: { children: ReactNode }) {
   const { user, signOut, mode } = useAuth();
@@ -15,6 +16,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <div className="app-bar__user">
           {mode === "demo" && <span className="app-bar__demo">Demo mode</span>}
           <span className="app-bar__email">{user?.email}</span>
+          <SettingsMenu />
           <button type="button" className="btn-text" onClick={() => void signOut()}>
             Sign out
           </button>

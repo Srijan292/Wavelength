@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { usePlayer } from "../../context/PlayerContext";
+import { useTheme } from "../../context/ThemeContext";
 
 const BAR_WIDTH = 4;
 const BAR_GAP = 3;
@@ -13,6 +14,9 @@ const MIN_BAR_HEIGHT = 2;
  */
 export function Spectrum() {
   const { isPlaying, getAnalyser } = usePlayer();
+  // Colors are read from CSS once per effect run, so a theme or accent change
+  // must re-run it.
+  const { resolved, accent } = useTheme();
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -120,7 +124,7 @@ export function Spectrum() {
       observer.disconnect();
       cancelAnimationFrame(frame);
     };
-  }, [isPlaying, getAnalyser]);
+  }, [isPlaying, getAnalyser, resolved, accent]);
 
   return <canvas ref={canvasRef} className="spectrum" aria-hidden="true" />;
 }

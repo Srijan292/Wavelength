@@ -3,7 +3,24 @@
 A cloud music player for the songs you own: sign in, upload your tracks, and
 play them from any browser with a queue and a live spectrum display. This is
 the Phase 1 frontend from the project roadmap (auth, cloud library, player),
-built so Phases 2 to 5 can be added without rework.
+plus a first pass at themes and the equalizer, built so Phases 2 to 5 can be
+added without rework.
+
+## What it does
+
+- **Library:** upload several files at once (button or drag-and-drop), search
+  by title, artist or album, sort by recently added / title / artist /
+  duration, rename, delete (with a confirmation dialog).
+- **Player:** play/pause, previous/next, seek, volume and mute, **shuffle**
+  (plays every song once before repeating; Previous walks back through what
+  played), **repeat** off / all / one, a queue panel, a live spectrum.
+- **Equalizer:** 10 bands (31 Hz to 16 kHz, ±12 dB), six presets, an on/off
+  switch and a response curve. Output is lowered automatically by the largest
+  boost so boosted bands can't clip.
+- **Themes:** System / Dark / Light and four accent colors (amber, teal, rose,
+  violet), from the settings button in the top bar.
+- **Remembered between visits:** theme, accent, volume, shuffle, repeat, sort
+  order and equalizer settings (stored in the browser).
 
 **Stack:** React 19, TypeScript, Vite, Supabase (Auth, Postgres, Storage),
 Web Audio API.
@@ -56,8 +73,12 @@ src/
     index.ts            Picks one from the env variables
   context/
     AuthContext.tsx     Session state
-    PlayerContext.tsx   Queue, transport, Web Audio graph, analyser
+    PlayerContext.tsx   Queue, shuffle/repeat, transport, Web Audio graph
+    ThemeContext.tsx    Theme + accent
+  lib/audio/equalizer.ts  Bands, presets, BiquadFilter chain
+  lib/theme.ts, storage.ts  Theme helpers, safe localStorage wrapper
   hooks/useLibrary.ts   Load / upload / rename / delete songs
+  hooks/useUploader.ts  Upload queue shared by the button and drag-and-drop
   components/
     Auth/  Layout/  Library/  Player/
   styles/               base, auth, library, player
@@ -69,27 +90,32 @@ change without touching unrelated UI.
 
 ## Notes for contributors
 
-- **Audio graph:** `<audio>` → source → analyser → gain → speakers. The
-  Phase 3 equalizer goes between the analyser and the gain as a chain of
-  `BiquadFilterNode`s. Volume is set on the `<audio>` element, not the gain
-  node, so the two never double-attenuate.
+- **Audio graph:** `<audio>` → source → equalizer (10 `BiquadFilterNode`s +
+  a headroom gain) → analyser → gain → speakers. The analyser sits after the
+  equalizer so the spectrum shows what you hear. Volume is set on the
+  `<audio>` element, not the gain node, so the two never double-attenuate.
+- **Theming:** colors are CSS variables switched by `data-theme` and
+  `data-accent` on `<html>`; the saved choice is applied in `main.tsx` before
+  the first render so there is no flash of the wrong theme.
 - **CORS:** the audio element sets `crossOrigin = "anonymous"`. Without it,
   routing a cross-origin file (such as a Supabase signed URL) through the Web
   Audio API produces silence.
 - **Storage:** files go to a private bucket at `<user_id>/<uuid>-<name>`.
   Playback uses a fresh one-hour signed URL per track, never a public link.
-- **Keyboard:** Space toggles play/pause when focus isn't on a control. Media
-  keys work through the Media Session API.
+- **Keyboard:** Space play/pause, ← → seek 5 s, M mute, Esc closes a panel.
+  Shortcuts are ignored while typing or when focus is on a control that uses
+  the key itself. Media keys work through the Media Session API.
 - **Reduced motion:** the spectrum and the queue drawer respect
   `prefers-reduced-motion`.
 - **UI standards** (also recorded in the SRS, section 3.1.1): IBM Plex Sans;
-  charcoal background with one amber accent used only for active and primary
-  states; icon-only buttons carry an `aria-label`; times use tabular figures;
+  charcoal background (dark theme) with one accent color, amber by default,
+  used only for active and primary states; icon-only buttons carry an `aria-label`; times use tabular figures;
   below 640px the duration column and volume control are hidden.
 
 ## Not built yet
 
-Custom thumbnails, themes, tag-based sorting (Phase 2); equalizer and
-lossless delivery (Phase 3); Jam (Phase 4); listening recap and offline
-caching (Phase 5). Metadata is currently taken from the file name; there is
+Custom thumbnails and tag-based sorting (Phase 2); lossless delivery
+(Phase 3); Jam (Phase 4); listening recap and offline caching (Phase 5).
+Themes and the equalizer ship here early; per-song or per-theme collections
+are still to come. Metadata is currently taken from the file name; there is
 no ID3 tag reading.
